@@ -1,7 +1,3 @@
-import { randomBytes } from "node:crypto";
-import { mkdtemp, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Keyboard } from "@maxhub/max-bot-api";
 import {
   orchestratorHealthy,
@@ -34,18 +30,11 @@ function orchSecrets() {
  * @param {string} replyText
  */
 async function replyWithUploadedPhoto(ctx, imageBytes, replyText) {
-  const tmpDir = await mkdtemp(join(tmpdir(), "max-bot-"));
-  const filePath = join(tmpDir, `${randomBytes(8).toString("hex")}.jpg`);
-  try {
-    await writeFile(filePath, imageBytes);
-    const uploaded = await ctx.api.uploadImage({ source: filePath });
-    await ctx.reply(replyText, {
-      attachments: [uploaded.toJson()],
-      format: "markdown",
-    });
-  } finally {
-    await unlink(filePath).catch(() => {});
-  }
+  const uploaded = await ctx.api.uploadImage({ source: imageBytes });
+  await ctx.reply(replyText, {
+    attachments: [uploaded.toJson()],
+    format: "markdown",
+  });
 }
 
 /** Безопасный текст: на фото MAX иногда даёт body.text === null — bot.command это ломает */
@@ -118,6 +107,7 @@ export function attachHandlers(bot) {
   });
 
   bot.on("message_created", async (ctx) => {
+    console.error("-> Got message:", safeMessageText(ctx.message), "from", ctx.user?.user_id);
     if (!ctx.user?.user_id || ctx.user.user_id === ctx.myId) {
       return;
     }
