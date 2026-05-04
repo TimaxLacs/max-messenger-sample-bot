@@ -1,0 +1,26 @@
+{
+  "name": "max-messenger-sample-bot",
+  "version": "1.0.0",
+  "description": "Тестовый чат-бот для мессенджера MAX (long polling + webhook)",
+  "type": "module",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "start": "node src/polling.mjs",
+    "webhook": "node src/webhook.mjs",
+    "register-webhook": "node src/registerWebhook.mjs"
+  },
+  "keywords": [
+    "max",
+    "max-messenger",
+    "chatbot",
+    "max-bot-api"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@maxhub/max-bot-api": "^0.2.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}
