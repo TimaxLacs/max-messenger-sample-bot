@@ -11,6 +11,13 @@
     "webhook": "node src/webhook.mjs",
     "register-webhook": "node src/registerWebhook.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TimaxLacs/max-messenger-sample-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TimaxLacs/max-messenger-sample-bot/issues"
+  },
   "keywords": [
     "max",
     "max-messenger",
