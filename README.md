@@ -31,6 +31,16 @@ npm start
 
 Откройте диалог с ботом в MAX и отправьте `/start`.
 
+## Docker
+
+```bash
+cp .env.example .env   # впишите BOT_TOKEN в .env
+docker compose up --build -d
+docker compose logs -f bot
+```
+
+Сборка без compose: `docker build -t max-sample-bot .` и `docker run --rm --env-file .env max-sample-bot`.
+
 ## Webhook (production)
 
 По [документации](https://dev.max.ru/docs-api/methods/POST/subscriptions) endpoint должен быть доступен по **HTTPS на порту 443**, сертификат от доверенного УЦ, ответ **200** в течение **30** секунд. Рекомендуется задать `WEBHOOK_SECRET` и проверять заголовок `X-Max-Bot-Api-Secret`.
@@ -47,12 +57,14 @@ Long polling и webhook **нельзя** использовать одновре
 
 ## Структура
 
-| Файл | Назначение |
-|------|------------|
-| `src/handlers.mjs` | Сценарии и обработчики |
-| `src/polling.mjs` | Запуск с long polling |
-| `src/webhook.mjs` | HTTP-сервер для webhook + `/health` |
+
+| Файл                      | Назначение                                             |
+| ------------------------- | ------------------------------------------------------ |
+| `src/handlers.mjs`        | Сценарии и обработчики                                 |
+| `src/polling.mjs`         | Запуск с long polling                                  |
+| `src/webhook.mjs`         | HTTP-сервер для webhook + `/health`                    |
 | `src/registerWebhook.mjs` | Вызов `POST https://platform-api.max.ru/subscriptions` |
+
 
 ## Ограничения API
 

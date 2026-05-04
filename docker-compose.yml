@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    command: ["node", "src/polling.mjs"]
+
+  # Альтернатива — webhook (перед включением убери сервис bot или закомментируй):
+  # bot-webhook:
+  #   build: .
+  #   env_file: .env
+  #   ports:
+  #     - "8080:8080"
+  #   command: ["node", "src/webhook.mjs"]
