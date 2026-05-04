@@ -3,3 +3,9 @@ node_modules/
 .DS_Store
 *.log
 npm-debug.log*
+orchestrator/.venv/
+orchestrator/**/__pycache__/
+orchestrator/**/*.pyc
+orchestrator/build/
+orchestrator/src/**/*.egg-info/
+data/

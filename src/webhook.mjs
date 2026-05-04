@@ -13,6 +13,22 @@ if (!token) {
   process.exit(1);
 }
 
+const internalTok = process.env.INTERNAL_TOKEN?.trim() ?? "";
+const orchUrl = process.env.ORCHESTRATOR_URL?.trim() ?? "";
+
+if (internalTok && !orchUrl) {
+  console.error("Задан INTERNAL_TOKEN, но пустой ORCHESTRATOR_URL — укажите URL оркестратора.");
+  process.exit(1);
+}
+
+if (!internalTok) {
+  console.error("[max-messenger-bot] INTERNAL_TOKEN пустой — режим эхо: исходное фото без оркестратора.");
+}
+
+console.error(
+  `[max-messenger-bot] ORCHESTRATOR_URL=${orchUrl || "(не используется)"} | pipeline=${internalTok ? "orchestrator" : "echo-original"}`,
+);
+
 const bot = new Bot(token);
 
 bot.catch((err, ctx) => {

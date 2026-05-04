@@ -1,14 +1,28 @@
 services:
+  orchestrator:
+    build: ./orchestrator
+    restart: unless-stopped
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      DATA_DIR: /data
+      MAX_PER_USER_PER_DAY: ${MAX_PER_USER_PER_DAY:-1}
+      AI_TRANSFORM_URL: ${AI_TRANSFORM_URL:-}
+      STUB_DELAY_SECONDS: ${STUB_DELAY_SECONDS:-0}
+      QUOTA_TIMEZONE: ${QUOTA_TIMEZONE:-Europe/Moscow}
+    volumes:
+      - orchestrator-data:/data
+
   bot:
     build: .
     env_file: .env
     restart: unless-stopped
     command: ["node", "src/polling.mjs"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      MAX_IMAGE_USE_BOT_AUTH: ${MAX_IMAGE_USE_BOT_AUTH:-0}
+    depends_on:
+      - orchestrator
 
-  # Альтернатива — webhook (перед включением убери сервис bot или закомментируй):
-  # bot-webhook:
-  #   build: .
-  #   env_file: .env
-  #   ports:
-  #     - "8080:8080"
-  #   command: ["node", "src/webhook.mjs"]
+volumes:
+  orchestrator-data:
