@@ -6,97 +6,24 @@ import {
   submitPhotoJob,
   waitForResultBuffer,
 } from "./orchestrator.mjs";
-
-const ALLOWED_UPDATES = [
-  "message_created",
-  "message_callback",
-  "bot_started",
-];
-
-export { ALLOWED_UPDATES };
-
-const processingKeys = new Set();
-
-function orchSecrets() {
-  return {
-    orchestratorUrl: process.env.ORCHESTRATOR_URL?.trim() ?? "",
-    internalToken: process.env.INTERNAL_TOKEN?.trim() ?? "",
-  };
-}
-
-/**
- * @param {import('@maxhub/max-bot-api').Context} ctx
- * @param {Buffer} imageBytes
- * @param {string} replyText
- */
-async function replyWithUploadedPhoto(ctx, imageBytes, replyText) {
-  const uploaded = await ctx.api.uploadImage({ source: imageBytes });
-  await ctx.reply(replyText, {
-    attachments: [uploaded.toJson()],
-    format: "markdown",
-  });
-}
-
-/** Безопасный текст: на фото MAX иногда даёт body.text === null — bot.command это ломает */
-function safeMessageText(message) {
-  const raw = message?.body?.text;
-  return typeof raw === "string" ? raw.trim() : "";
-}
-
-function parseSlashCommand(fullText) {
-  if (!fullText.startsWith("/")) {
-    return { name: null, rest: "" };
-  }
-  const body = fullText.slice(1);
-  const [head, ...restParts] = body.split(/\s+/);
-  const name = head.includes("@") ? head.split("@")[0].toLowerCase() : head.toLowerCase();
-  return { name, rest: restParts.join(" ").trim() };
-}
-
-/**
- * @param {import('@maxhub/max-bot-api').Message} message
- */
-export function pickImageAttachment(message) {
-  const list = message?.body?.attachments;
-  if (!Array.isArray(list)) {
-    return null;
-  }
-  const direct = list.find((a) => a?.type === "image") ?? null;
-  if (direct?.payload?.url) {
-    return direct;
-  }
-  return (
-    list.find((a) => {
-      if (a?.type !== "file") {
-        return false;
-      }
-      const n = typeof a.filename === "string" ? a.filename.toLowerCase() : "";
-      return /\.(jpe?g|png|webp)$/iu.test(n);
-    }) ?? null
-  );
-}
-
-async function fetchImagePayload(url, botToken) {
-  const headers = {};
-  if (process.env.MAX_IMAGE_USE_BOT_AUTH === "1" && botToken) {
-    headers.Authorization = botToken;
-  }
-
-  const res = await fetch(url, { redirect: "follow", headers });
-  if (!res.ok) {
-    throw new Error(`download_image_${res.status}`);
-  }
-  return Buffer.from(await res.arrayBuffer());
-}
+import {
+  processingKeys,
+  orchSecrets,
+  replyWithUploadedPhoto,
+  safeMessageText,
+  parseSlashCommand,
+  pickImageAttachment,
+  fetchImagePayload,
+} from "./shared.mjs";
 
 /**
  * @param {import('@maxhub/max-bot-api').Bot} bot
  */
-export function attachHandlers(bot) {
+export function attachHandlersBot3(bot) {
   const botToken = process.env.BOT_TOKEN?.trim();
 
   bot.on("bot_started", async (ctx) => {
-    await ctx.reply("Отправь фото для открытки к 9 Мая. Команды: /start, /help", { format: "markdown" });
+    await ctx.reply("Отправь фото для создания памятной открытки к 9 Мая. Команды: /start, /help", { format: "markdown" });
   });
 
   bot.action("ping", async (ctx) => {
@@ -107,7 +34,7 @@ export function attachHandlers(bot) {
   });
 
   bot.on("message_created", async (ctx) => {
-    console.error("-> Got message:", safeMessageText(ctx.message), "from", ctx.user?.user_id);
+    console.error("-> [Bot3] Got message:", safeMessageText(ctx.message), "from", ctx.user?.user_id);
     if (!ctx.user?.user_id || ctx.user.user_id === ctx.myId) {
       return;
     }
@@ -119,14 +46,12 @@ export function attachHandlers(bot) {
       const keyboard = Keyboard.inlineKeyboard([[Keyboard.button.callback("Ping", "ping")]]);
       await ctx.reply(
         [
-          "**MAX-бот**: приём фото, передача в оркестратор, получение результата — всё в этом репозитории.",
+          "**Памятная открытка к 9 мая** 🕊️",
           "",
-          "**Генерация** (Pillow / внешний ИИ) выполняется в сервисе **orchestrator** (нужны `INTERNAL_TOKEN` + `ORCHESTRATOR_URL`).",
+          "Отправь фото, чтобы стилизовать его к празднику Великой Победы.",
+          "Генерация выполняется на стороне оркестратора.",
           "",
-          "Если **INTERNAL_TOKEN** не задан — бот **возвращает исходное фото** без обработки (режим проверки интеграции).",
-          "",
-          "**Открытка к 9 мая** — отправь одно фото из галереи.",
-          "**Лимит** на оркестраторе: 1 обработка на пользователя за сутки (календарь Москвы).",
+          "**Лимит**: 1 обработка на пользователя за сутки.",
         ].join("\n"),
         { format: "markdown", attachments: [keyboard] },
       );
@@ -140,9 +65,7 @@ export function attachHandlers(bot) {
           "/start — о проекте",
           "/help — эта справка",
           "",
-          "Отправь **одно изображение** (JPEG/PNG из галереи или файл с тем же расширением).",
-          "Без **INTERNAL_TOKEN** бот вернёт **то же фото** без генерации.",
-          "С токеном и оркестратором — обработка и лимит на бэкенде.",
+          "Отправь **одно изображение** (JPEG/PNG из галереи).",
         ].join("\n"),
         { format: "markdown" },
       );
@@ -178,7 +101,7 @@ export function attachHandlers(bot) {
     if (!attachment?.payload?.url) {
       if (cmd != null || text.length > 0) {
         await ctx.reply(
-          "Пришли **изображением** одно фото (JPEG или PNG из галереи либо как файл `.jpg`/`.png`).",
+          "Пришли **изображением** одно фото для памятной открытки.",
           { format: "markdown" },
         );
       }
@@ -202,7 +125,7 @@ export function attachHandlers(bot) {
         await ctx.reply(
           [
             "Не удалось скачать фото из MAX.",
-            "Повтори попытку. Если не поможет — в `.env`/compose для бота выставь `MAX_IMAGE_USE_BOT_AUTH=1`.",
+            "Повтори попытку.",
           ].join("\n"),
           { format: "markdown" },
         );
@@ -222,7 +145,7 @@ export function attachHandlers(bot) {
 
       if (!orchestratorUrl) {
         await ctx.reply(
-          "Задан **INTERNAL_TOKEN**, но не задан **ORCHESTRATOR_URL**. Укажи адрес сервиса оркестратора в окружении бота.",
+          "Задан **INTERNAL_TOKEN**, но не задан **ORCHESTRATOR_URL**.",
           { format: "markdown" },
         );
         return;
@@ -232,14 +155,15 @@ export function attachHandlers(bot) {
       if (!isUp) {
         await ctx.reply(
           [
-            "Не удаётся связаться с **оркестратором** (проверка /health не прошла).",
-            "Попробуй позже или проверь, что сервис `orchestrator` запущен и `ORCHESTRATOR_URL` верный.",
+            "Не удаётся связаться с **оркестратором**.",
+            "Попробуй позже.",
           ].join("\n"),
           { format: "markdown" },
         );
         return;
       }
 
+      // We could add a preset field to the job if the orchestrator supports it
       const jobId = await submitPhotoJob({
         orchestratorUrl,
         internalToken,
