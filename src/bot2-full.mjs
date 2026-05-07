@@ -5,6 +5,7 @@ import {
   OrchestratorHttpError,
   submitPhotoJob,
   waitForResultBuffer,
+  registerUser,
 } from "./orchestrator.mjs";
 import {
   processingKeys,
@@ -14,6 +15,7 @@ import {
   parseSlashCommand,
   pickImageAttachment,
   fetchImagePayload,
+  getBotLink,
 } from "./shared.mjs";
 
 const userStates = new Map();
@@ -25,6 +27,17 @@ export function attachHandlersBot2(bot) {
   const botToken = process.env.BOT_TOKEN?.trim();
 
   bot.on("bot_started", async (ctx) => {
+    const invitedBy = ctx.startPayload;
+    if (invitedBy) {
+      try {
+        const { orchestratorUrl, internalToken } = orchSecrets();
+        if (orchestratorUrl && internalToken) {
+          await registerUser({ orchestratorUrl, internalToken, userId: String(ctx.user?.user_id), invitedBy });
+        }
+      } catch (err) {
+        console.error("Failed to register user:", err.message);
+      }
+    }
     await sendMenu(ctx);
   });
 
@@ -34,6 +47,7 @@ export function attachHandlersBot2(bot) {
       [Keyboard.button.callback("👤 Исторические личности", "opt_figures")],
       [Keyboard.button.callback("🖼 Фоны", "opt_backgrounds")],
       [Keyboard.button.callback("✍️ Надписи", "opt_texts")],
+      [Keyboard.button.callback("🔗 Реферальная ссылка", "opt_referral")],
     ]);
 
     await ctx.reply("Выбери функцию для генерации:", {
@@ -43,6 +57,12 @@ export function attachHandlersBot2(bot) {
   }
 
   // Handle option selections
+  bot.action("opt_referral", async (ctx) => {
+    await ctx.answerOnCallback();
+    const link = await getBotLink(ctx);
+    await ctx.reply(`Твоя реферальная ссылка:\n${link}\n\nПоделись ей с друзьями, и когда они начнут пользоваться ботом, твой лимит на генерацию фото увеличится!`, { format: "markdown" });
+  });
+
   bot.action(/^opt_(filters|figures|backgrounds|texts)$/, async (ctx) => {
     const userId = String(ctx.user?.user_id);
     const option = ctx.match[1];

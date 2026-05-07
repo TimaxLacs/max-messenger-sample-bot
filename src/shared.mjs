@@ -79,3 +79,17 @@ export async function fetchImagePayload(url, botToken) {
   }
   return Buffer.from(await res.arrayBuffer());
 }
+
+let cachedBotUsername = null;
+export async function getBotLink(ctx) {
+  if (!cachedBotUsername) {
+    try {
+      const info = await ctx.api.getMyInfo();
+      cachedBotUsername = info.username;
+    } catch {
+      return "https://max.ru/";
+    }
+  }
+  const userId = ctx.user?.user_id || "";
+  return `https://max.ru/bot/${cachedBotUsername}?start=${userId}`;
+}

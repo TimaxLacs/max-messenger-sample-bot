@@ -16,6 +16,26 @@ export async function orchestratorHealthy(url, timeoutMs = 3000) {
   }
 }
 
+export async function registerUser(opts) {
+  const url = `${baseUrl(opts.orchestratorUrl)}/internal/v1/users`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "X-Internal-Token": opts.internalToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id: opts.userId,
+      invited_by: opts.invitedBy || null,
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new OrchestratorHttpError(`register_user ${res.status}: ${txt.slice(0, 500)}`);
+  }
+  return await res.json();
+}
+
 /**
  * @param {object} opts
  * @param {string} opts.orchestratorUrl

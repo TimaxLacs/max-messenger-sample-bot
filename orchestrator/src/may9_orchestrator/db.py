@@ -16,6 +16,10 @@ def init_db(path: Path) -> None:
     try:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                invited_by TEXT
+            );
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
@@ -61,10 +65,38 @@ def connection(path: Path):
         conn.close()
 
 
-def reserve_quota_and_insert_job(conn: sqlite3.Connection, *, job_id: str, user_id: str, day: str, limit: int) -> None:
+def register_user(conn: sqlite3.Connection, *, user_id: str, invited_by: str | None = None) -> bool:
+    """Registers a user if they don't exist. Returns True if newly registered."""
     with _lock:
         conn.execute("BEGIN IMMEDIATE")
         try:
+            row = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if row is not None:
+                conn.rollback()
+                return False
+            conn.execute(
+                "INSERT INTO users (user_id, invited_by) VALUES (?, ?)",
+                (user_id, invited_by),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+
+def get_referral_bonus(conn: sqlite3.Connection, *, user_id: str) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM users WHERE invited_by = ?", (user_id,)).fetchone()
+    return int(row[0]) if row else 0
+
+def reserve_quota_and_insert_job(conn: sqlite3.Connection, *, job_id: str, user_id: str, day: str, base_limit: int) -> None:
+    with _lock:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Check referral bonus
+            row_bonus = conn.execute("SELECT COUNT(*) FROM users WHERE invited_by = ?", (user_id,)).fetchone()
+            bonus = int(row_bonus[0]) if row_bonus else 0
+            limit = base_limit + bonus
+
             row = conn.execute(
                 "SELECT used FROM daily_usage WHERE user_id = ? AND day = ?",
                 (user_id, day),

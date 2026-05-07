@@ -5,6 +5,7 @@ import {
   OrchestratorHttpError,
   submitPhotoJob,
   waitForResultBuffer,
+  registerUser,
 } from "./orchestrator.mjs";
 import {
   processingKeys,
@@ -14,6 +15,7 @@ import {
   parseSlashCommand,
   pickImageAttachment,
   fetchImagePayload,
+  getBotLink,
 } from "./shared.mjs";
 
 /**
@@ -23,6 +25,17 @@ export function attachHandlersBot3(bot) {
   const botToken = process.env.BOT_TOKEN?.trim();
 
   bot.on("bot_started", async (ctx) => {
+    const invitedBy = ctx.startPayload;
+    if (invitedBy) {
+      try {
+        const { orchestratorUrl, internalToken } = orchSecrets();
+        if (orchestratorUrl && internalToken) {
+          await registerUser({ orchestratorUrl, internalToken, userId: String(ctx.user?.user_id), invitedBy });
+        }
+      } catch (err) {
+        console.error("Failed to register user:", err.message);
+      }
+    }
     await ctx.reply("Отправь фото для создания памятной открытки к 9 Мая. Команды: /start, /help", { format: "markdown" });
   });
 
@@ -191,7 +204,7 @@ export function attachHandlersBot3(bot) {
         return;
       }
 
-      await replyWithUploadedPhoto(ctx, out, "Готово! С Днём Победы! 🕊️");
+      await replyWithUploadedPhoto(ctx, out, `Готово! С Днём Победы! 🕊️\n\nСделано с помощью: ${await getBotLink(ctx)}`);
     } catch (err) {
       if (err instanceof QuotaExceededError) {
         await ctx.reply(err.message || "Лимит исчерпан.", { format: "markdown" });

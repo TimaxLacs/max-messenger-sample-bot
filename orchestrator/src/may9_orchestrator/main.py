@@ -24,7 +24,10 @@ from may9_orchestrator.db import (
     update_job_done,
     update_job_failed,
     update_job_processing,
+    register_user,
+    get_referral_bonus,
 )
+from pydantic import BaseModel
 from may9_orchestrator.transform import transform_image
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,28 @@ app = FastAPI(title="may9-orchestrator", version="0.1.0", lifespan=lifespan)
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
+
+class UserRegisterReq(BaseModel):
+    user_id: str
+    invited_by: str | None = None
+
+@app.post("/internal/v1/users", dependencies=[Depends(verify_internal_token)])
+async def create_user(req: UserRegisterReq) -> JSONResponse:
+    db_path = Path(settings.data_dir) / "orchestrator.db"
+    def _inner() -> bool:
+        with connection(db_path) as conn:
+            return register_user(conn, user_id=req.user_id, invited_by=req.invited_by)
+    new_user = await blocking(_inner)
+    return JSONResponse(status_code=200, content={"new_user": new_user})
+
+@app.get("/internal/v1/users/{user_id}/bonus", dependencies=[Depends(verify_internal_token)])
+async def get_bonus(user_id: str) -> JSONResponse:
+    db_path = Path(settings.data_dir) / "orchestrator.db"
+    def _inner() -> int:
+        with connection(db_path) as conn:
+            return get_referral_bonus(conn, user_id=user_id)
+    bonus = await blocking(_inner)
+    return JSONResponse(status_code=200, content={"bonus": bonus})
 
 @app.get("/health")
 async def health() -> dict[str, bool]:
@@ -125,18 +150,18 @@ async def create_job(
                 job_id=job_id,
                 user_id=uid,
                 day=day,
-                limit=settings.max_per_user_per_day,
+                base_limit=settings.max_per_user_per_day,
             )
 
     try:
         await blocking(reserve)
-    except QuotaExceededError:
+    except QuotaExceededError as err:
         return JSONResponse(
             status_code=429,
             content={
                 "error": "quota_exceeded",
-                "message": "Сегодня лимит исчерпан — доступна 1 открытка в сутки. Загляните завтра.",
-                "limit": settings.max_per_user_per_day,
+                "message": f"Сегодня лимит исчерпан — доступно {err.limit} откр. в сутки. Приглашайте друзей по ссылке, чтобы увеличить лимит!",
+                "limit": err.limit,
             },
         )
 

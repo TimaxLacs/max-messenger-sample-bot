@@ -5,6 +5,7 @@ import {
   OrchestratorHttpError,
   submitPhotoJob,
   waitForResultBuffer,
+  registerUser,
 } from "./orchestrator.mjs";
 import {
   processingKeys,
@@ -14,6 +15,7 @@ import {
   parseSlashCommand,
   pickImageAttachment,
   fetchImagePayload,
+  getBotLink,
 } from "./shared.mjs";
 
 /**
@@ -23,6 +25,17 @@ export function attachHandlersBot1(bot) {
   const botToken = process.env.BOT_TOKEN?.trim();
 
   bot.on("bot_started", async (ctx) => {
+    const invitedBy = ctx.startPayload;
+    if (invitedBy) {
+      try {
+        const { orchestratorUrl, internalToken } = orchSecrets();
+        if (orchestratorUrl && internalToken) {
+          await registerUser({ orchestratorUrl, internalToken, userId: String(ctx.user?.user_id), invitedBy });
+        }
+      } catch (err) {
+        console.error("Failed to register user:", err.message);
+      }
+    }
     await ctx.reply("Отправь фото, и я верну обработанное изображение. Команды: /start, /help", { format: "markdown" });
   });
 
@@ -189,7 +202,7 @@ export function attachHandlersBot1(bot) {
         return;
       }
 
-      await replyWithUploadedPhoto(ctx, out, "Готово!");
+      await replyWithUploadedPhoto(ctx, out, `Готово!\n\nСделано с помощью: ${await getBotLink(ctx)}`);
     } catch (err) {
       if (err instanceof QuotaExceededError) {
         await ctx.reply(err.message || "Лимит исчерпан.", { format: "markdown" });
