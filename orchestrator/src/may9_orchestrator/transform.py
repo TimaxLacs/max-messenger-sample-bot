@@ -65,14 +65,29 @@ def apply_may9_overlay(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def _find_result_url(data: dict) -> str | None:
-    """Defensively extract result_url from job status response."""
-    if "result_url" in data:
-        return str(data["result_url"])
-    for entry in data.get("state_history", []):
-        if isinstance(entry, dict) and "result_url" in entry:
-            return str(entry["result_url"])
-    return None
+def _find_result_url(data: dict, base_url: str) -> str | None:
+    """
+    Extract result_url from job status response and make it absolute.
+    state_history can be a dict {"result_url": "..."} or a list of dicts.
+    """
+    raw: str | None = None
+
+    state_history = data.get("state_history")
+    if isinstance(state_history, dict):
+        raw = state_history.get("result_url")
+    elif isinstance(state_history, list):
+        for entry in state_history:
+            if isinstance(entry, dict) and "result_url" in entry:
+                raw = entry["result_url"]
+                break
+
+    if raw is None:
+        raw = data.get("result_url")
+
+    if not raw:
+        return None
+
+    return f"{base_url}{raw}" if raw.startswith("/") else raw
 
 
 async def _lukoshko_ai(
@@ -85,10 +100,10 @@ async def _lukoshko_ai(
     Calls the Lukoshko async image processing API.
     1. POST /api/v1/image_flip  → get job_id
     2. Poll GET /api/v1/jobs/{id} until status == "finished"
-    3. Download from result_url
+    3. Download from result_url (public, no auth needed)
     """
     b64 = base64.b64encode(image_bytes).decode("ascii")
-    headers = {"X-Client-Token": token}
+    auth_headers = {"X-Client-Token": token}
     payload: dict = {"initial_data": {"image_base64": b64}}
     if preset:
         payload["initial_data"]["preset"] = preset
@@ -97,7 +112,7 @@ async def _lukoshko_ai(
         # Step 1: start job
         resp = await client.post(
             f"{base_url}/api/v1/image_flip",
-            headers={**headers, "Content-Type": "application/json"},
+            headers={**auth_headers, "Content-Type": "application/json"},
             json=payload,
         )
         resp.raise_for_status()
@@ -112,28 +127,28 @@ async def _lukoshko_ai(
             await asyncio.sleep(_LUKOSHKO_POLL_INTERVAL)
             poll = await client.get(
                 f"{base_url}/api/v1/jobs/{job_id}",
-                headers=headers,
+                headers=auth_headers,
             )
             poll.raise_for_status()
             status_data = poll.json()
-            current_status = status_data.get("status", "")
+            current_status = status_data.get("status") or status_data.get("current_state", "")
 
             if current_status == "finished":
-                result_url = _find_result_url(status_data)
+                result_url = _find_result_url(status_data, base_url)
                 if not result_url:
                     raise ValueError(f"Lukoshko: finished but no result_url: {status_data}")
-                logger.info("Lukoshko job %s finished, downloading from %s", job_id, result_url)
+                logger.info("Lukoshko job %s finished → %s", job_id, result_url)
 
-                # Step 3: download result
-                dl = await client.get(result_url, headers=headers)
+                # Step 3: download (no auth required for download URLs)
+                dl = await client.get(result_url)
                 dl.raise_for_status()
                 return dl.content
 
             if current_status in ("failed", "error", "cancelled"):
-                raise RuntimeError(f"Lukoshko job {job_id} status={current_status}: {status_data}")
+                raise RuntimeError(f"Lukoshko job {job_id} status={current_status}")
 
-            if attempt % 10 == 0:
-                logger.debug("Lukoshko job %s still %s (poll %d)", job_id, current_status, attempt)
+            if attempt % 5 == 0:
+                logger.debug("Lukoshko job %s: %s (poll %d/%d)", job_id, current_status, attempt, _LUKOSHKO_MAX_POLLS)
 
         raise TimeoutError(f"Lukoshko job {job_id} timed out after {_LUKOSHKO_MAX_POLLS * _LUKOSHKO_POLL_INTERVAL:.0f}s")
 
