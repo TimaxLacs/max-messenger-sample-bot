@@ -15,6 +15,8 @@ class Settings:
     ai_transform_url: str | None = None
     ai_transform_timeout_seconds: float = 120.0
     stub_delay_seconds: float = 0.0
+    lukoshko_token: str = ""
+    lukoshko_base_url: str = "https://lukoshko.ilovlya.ru"
 
     @staticmethod
     def from_env() -> Settings:
@@ -28,4 +30,6 @@ class Settings:
             ai_transform_url=(u.strip() if (u := os.getenv("AI_TRANSFORM_URL")) else None),
             ai_transform_timeout_seconds=float(os.getenv("AI_TRANSFORM_TIMEOUT_SECONDS", "120")),
             stub_delay_seconds=float(os.getenv("STUB_DELAY_SECONDS", "0")),
+            lukoshko_token=os.getenv("LUKOSHKO_TOKEN", "").strip(),
+            lukoshko_base_url=os.getenv("LUKOSHKO_BASE_URL", "https://lukoshko.ilovlya.ru").strip().rstrip("/"),
         )
