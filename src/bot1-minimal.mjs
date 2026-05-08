@@ -1,4 +1,3 @@
-import { Keyboard } from "@maxhub/max-bot-api";
 import {
   orchestratorHealthy,
   QuotaExceededError,
@@ -10,7 +9,7 @@ import {
 import {
   processingKeys,
   orchSecrets,
-  replyWithUploadedPhoto,
+  sendPhotoWithReferral,
   safeMessageText,
   parseSlashCommand,
   pickImageAttachment,
@@ -18,93 +17,57 @@ import {
   getBotLink,
 } from "./shared.mjs";
 
-/**
- * @param {import('@maxhub/max-bot-api').Bot} bot
- */
+const WELCOME_TEXT = [
+  "Привет! 👋",
+  "",
+  "Отправь любое фото — и я верну обработанное изображение.",
+  "",
+  "💡 Лимит: 1 обработка в сутки",
+  "🎁 Приглашай друзей — за каждого +1 генерация",
+].join("\n");
+
+const HELP_TEXT = [
+  "**Как пользоваться:**",
+  "",
+  "Просто отправь одно фото (JPEG или PNG) — получишь обработанное изображение.",
+  "",
+  "💡 **Лимит:** 1 обработка в сутки",
+  "🎁 **+1 генерация:** поделись результатом с другом. Если он откроет бота по ссылке из подписи — тебе зачислится дополнительная генерация.",
+].join("\n");
+
+/** @param {import('@maxhub/max-bot-api').Bot} bot */
 export function attachHandlersBot1(bot) {
   const botToken = process.env.BOT_TOKEN?.trim();
 
   bot.on("bot_started", async (ctx) => {
     const invitedBy = ctx.startPayload;
-    if (invitedBy) {
+    const userId = String(ctx.user?.user_id ?? "");
+    if (invitedBy && invitedBy !== userId) {
       try {
         const { orchestratorUrl, internalToken } = orchSecrets();
         if (orchestratorUrl && internalToken) {
-          await registerUser({ orchestratorUrl, internalToken, userId: String(ctx.user?.user_id), invitedBy });
+          await registerUser({ orchestratorUrl, internalToken, userId, invitedBy });
         }
       } catch (err) {
-        console.error("Failed to register user:", err.message);
+        console.error("[bot1] register_user:", err.message);
       }
     }
-    await ctx.reply("Отправь фото, и я верну обработанное изображение. Команды: /start, /help", { format: "markdown" });
-  });
-
-  bot.action("ping", async (ctx) => {
-    await ctx.answerOnCallback({ notification: "pong" });
-    await ctx.reply("pong", {
-      link: { type: "reply", mid: ctx.message.body.mid },
-    });
+    await ctx.reply(WELCOME_TEXT, { format: "markdown" });
   });
 
   bot.on("message_created", async (ctx) => {
-    console.error("-> [Bot1] Got message:", safeMessageText(ctx.message), "from", ctx.user?.user_id);
-    if (!ctx.user?.user_id || ctx.user.user_id === ctx.myId) {
-      return;
-    }
+    if (!ctx.user?.user_id || ctx.user.user_id === ctx.myId) return;
 
     const text = safeMessageText(ctx.message);
-    const { name: cmd, rest } = parseSlashCommand(text);
+    const { name: cmd } = parseSlashCommand(text);
 
     if (cmd === "start") {
-      const keyboard = Keyboard.inlineKeyboard([[Keyboard.button.callback("Ping", "ping")]]);
-      await ctx.reply(
-        [
-          "**Бот (Минимальный)**: приём фото, передача в оркестратор, получение результата.",
-          "",
-          "Если **INTERNAL_TOKEN** не задан — бот **возвращает исходное фото** без обработки.",
-          "",
-          "Отправь одно фото из галереи.",
-        ].join("\n"),
-        { format: "markdown", attachments: [keyboard] },
-      );
+      await ctx.reply(WELCOME_TEXT, { format: "markdown" });
       return;
     }
 
     if (cmd === "help") {
-      await ctx.reply(
-        [
-          "**Команды**",
-          "/start — о проекте",
-          "/help — эта справка",
-          "",
-          "Отправь **одно изображение** (JPEG/PNG из галереи или файл с тем же расширением).",
-        ].join("\n"),
-        { format: "markdown" },
-      );
-      return;
-    }
-
-    if (/^ping$/iu.test(text)) {
-      await ctx.reply("ok");
-      return;
-    }
-
-    if (cmd === "echo") {
-      const payload = rest.trim();
-      if (!payload) {
-        await ctx.reply("Использование: /echo текст", { format: "markdown" });
-      } else {
-        await ctx.reply(payload);
-      }
-      return;
-    }
-
-    if (/^контекст$|^context$/iu.test(text)) {
-      const marker = `\`chat_id: ${ctx.chatId}\`\n`;
-      const userPart = ctx.user
-        ? `user: ${ctx.user.name ?? ""} (${ctx.user.user_id})`
-        : "user: неизвестен";
-      await ctx.reply(`${marker}${userPart}`, { format: "markdown" });
+      await ctx.reply(HELP_TEXT, { format: "markdown" });
       return;
     }
 
@@ -113,20 +76,17 @@ export function attachHandlersBot1(bot) {
     if (!attachment?.payload?.url) {
       if (cmd != null || text.length > 0) {
         await ctx.reply(
-          "Пришли **изображением** одно фото (JPEG или PNG из галереи либо как файл `.jpg`/`.png`).",
+          "Отправь **фото** из галереи или файл JPEG/PNG — и я обработаю его.",
           { format: "markdown" },
         );
       }
       return;
     }
 
-    const userKey = String(ctx.user.user_id);
-    if (processingKeys.has(userKey)) {
-      await ctx.reply("Уже обрабатываю твоё фото — подожди несколько секунд.");
-      return;
-    }
+    const userId = String(ctx.user.user_id);
+    if (processingKeys.has(userId)) return;
 
-    processingKeys.add(userKey);
+    processingKeys.add(userId);
     try {
       await ctx.sendAction("sending_photo");
 
@@ -134,86 +94,69 @@ export function attachHandlersBot1(bot) {
       try {
         bytes = await fetchImagePayload(attachment.payload.url, botToken);
       } catch {
-        await ctx.reply(
-          [
-            "Не удалось скачать фото из MAX.",
-            "Повтори попытку.",
-          ].join("\n"),
-          { format: "markdown" },
-        );
+        await ctx.reply("Не удалось загрузить фото. Попробуй ещё раз.");
         return;
       }
+
+      const link = await getBotLink(ctx, userId).catch(() => null);
+      const caption = link
+        ? `✨ Готово!\n\n🔗 [Создай своё изображение](${link})`
+        : "✨ Готово!";
+      const followup = link
+        ? [
+            "🎁 **Получи +1 генерацию!**",
+            "",
+            "Поделись этим изображением с другом. Если он откроет бота по ссылке из подписи и создаст своё — тебе автоматически зачислится дополнительная генерация.",
+          ].join("\n")
+        : null;
 
       const { orchestratorUrl, internalToken } = orchSecrets();
 
-      if (!internalToken) {
-        await replyWithUploadedPhoto(
-          ctx,
-          bytes,
-          "Переменная **INTERNAL_TOKEN** не задана — возвращаю **исходное фото** без обработки на оркестраторе.",
-        );
-        return;
-      }
-
-      if (!orchestratorUrl) {
-        await ctx.reply(
-          "Задан **INTERNAL_TOKEN**, но не задан **ORCHESTRATOR_URL**.",
-          { format: "markdown" },
-        );
+      if (!internalToken || !orchestratorUrl) {
+        await sendPhotoWithReferral(ctx, bytes, caption, followup);
         return;
       }
 
       const isUp = await orchestratorHealthy(orchestratorUrl, 3500);
       if (!isUp) {
-        await ctx.reply(
-          [
-            "Не удаётся связаться с **оркестратором** (проверка /health не прошла).",
-            "Попробуй позже.",
-          ].join("\n"),
-          { format: "markdown" },
-        );
+        await ctx.reply("Сервис временно недоступен. Попробуй позже.");
         return;
       }
 
-      const jobId = await submitPhotoJob({
-        orchestratorUrl,
-        internalToken,
-        userId: userKey,
-        imageBytes: bytes,
-      });
+      const jobId = await submitPhotoJob({ orchestratorUrl, internalToken, userId, imageBytes: bytes });
 
       let out;
       try {
-        out = await waitForResultBuffer({
-          orchestratorUrl,
-          internalToken,
-          userId: userKey,
-          jobId,
-        });
+        out = await waitForResultBuffer({ orchestratorUrl, internalToken, userId, jobId });
       } catch (err) {
         if (err instanceof QuotaExceededError) {
-          await ctx.reply(String(err.message));
+          await ctx.reply(
+            [
+              "⏳ **Лимит на сегодня исчерпан.**",
+              "",
+              "Возвращайся завтра — или пригласи друга по своей реферальной ссылке и получи +1 генерацию прямо сейчас!",
+            ].join("\n"),
+            { format: "markdown" },
+          );
           return;
         }
-        await ctx.reply(
-          ["Не удалось получить результат с оркестратора.", "", `_${String(err.message).slice(0, 280)}_`].join("\n"),
-          { format: "markdown" },
-        );
+        await ctx.reply("Что-то пошло не так при обработке. Попробуй позже.");
         return;
       }
 
-      await replyWithUploadedPhoto(ctx, out, `Готово!\n\nСделано с помощью: ${await getBotLink(ctx)}`);
+      await sendPhotoWithReferral(ctx, out, caption, followup);
     } catch (err) {
       if (err instanceof QuotaExceededError) {
-        await ctx.reply(err.message || "Лимит исчерпан.", { format: "markdown" });
-      } else if (err instanceof OrchestratorHttpError) {
-        await ctx.reply(`Ошибка бэкенда: ${String(err.message).slice(0, 400)}`, { format: "markdown" });
+        await ctx.reply(
+          ["⏳ **Лимит на сегодня исчерпан.**", "", "Пригласи друга — и получи +1 генерацию!"].join("\n"),
+          { format: "markdown" },
+        );
       } else {
-        console.error(err);
-        await ctx.reply("Внутренняя ошибка. Попробуй позже.", { format: "markdown" });
+        console.error("[bot1] error:", err);
+        await ctx.reply("Произошла ошибка. Попробуй позже.");
       }
     } finally {
-      processingKeys.delete(userKey);
+      processingKeys.delete(userId);
     }
   });
 }
