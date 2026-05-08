@@ -20,16 +20,12 @@ import {
 
 const OPTION_NAMES = {
   filters: "🎨 Фильтры",
-  figures: "👤 Исторические личности",
   backgrounds: "🖼 Фоны",
-  texts: "✍️ Надписи",
 };
 
 const OPTION_ENV = {
   filters: "ORCHESTRATOR_URL_FILTERS",
-  figures: "ORCHESTRATOR_URL_FIGURES",
   backgrounds: "ORCHESTRATOR_URL_BACKGROUNDS",
-  texts: "ORCHESTRATOR_URL_TEXTS",
 };
 
 const PHOTO_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -65,7 +61,7 @@ export function attachHandlersBot2(bot) {
       [
         "Привет! 👋",
         "",
-        "Отправь фото — и я предложу варианты обработки: фильтры, фоны, исторические образы, надписи.",
+        "Отправь фото — и я предложу варианты обработки: фильтры или смена фона.",
         "",
         "💡 Лимит: 1 обработка в сутки",
         "🎁 Приглашай друзей — за каждого +1 генерация",
@@ -77,9 +73,7 @@ export function attachHandlersBot2(bot) {
   async function sendModificationMenu(ctx) {
     const keyboard = Keyboard.inlineKeyboard([
       [Keyboard.button.callback("🎨 Фильтры", "opt_filters")],
-      [Keyboard.button.callback("👤 Исторические личности", "opt_figures")],
       [Keyboard.button.callback("🖼 Фоны", "opt_backgrounds")],
-      [Keyboard.button.callback("✍️ Надписи", "opt_texts")],
     ]);
     await ctx.reply(
       "Фото получено! Выбери модификацию:",
@@ -87,7 +81,7 @@ export function attachHandlersBot2(bot) {
     );
   }
 
-  bot.action(/^opt_(filters|figures|backgrounds|texts)$/, async (ctx) => {
+  bot.action(/^opt_(filters|backgrounds)$/, async (ctx) => {
     const userId = String(ctx.user?.user_id);
     const option = ctx.match[1];
 
@@ -192,7 +186,7 @@ export function attachHandlersBot2(bot) {
         [
           "**Как пользоваться:**",
           "",
-          "Отправь фото — и выбери одну из модификаций: фильтры, фоны, исторические образы или надпись.",
+          "Отправь фото — и выбери модификацию: фильтр или смену фона.",
           "",
           "💡 **Лимит:** 1 обработка в сутки",
           "🎁 **+1 генерация:** поделись результатом с другом. Если он откроет бота по ссылке из подписи — тебе зачислится бонус.",
@@ -208,7 +202,7 @@ export function attachHandlersBot2(bot) {
           "**Как пользоваться:**",
           "",
           "1. Отправь одно фото (JPEG или PNG)",
-          "2. Выбери модификацию из меню",
+          "2. Выбери модификацию: фильтр или фон",
           "3. Получи обработанное изображение",
           "",
           "💡 **Лимит:** 1 обработка в сутки",
