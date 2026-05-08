@@ -18,8 +18,6 @@ import {
   getBotLink,
 } from "./shared.mjs";
 
-const userStates = new Map();
-
 const OPTION_NAMES = {
   filters: "🎨 Фильтры",
   figures: "👤 Исторические личности",
@@ -33,6 +31,18 @@ const OPTION_ENV = {
   backgrounds: "ORCHESTRATOR_URL_BACKGROUNDS",
   texts: "ORCHESTRATOR_URL_TEXTS",
 };
+
+const PHOTO_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/** @type {Map<string, { bytes: Buffer, cachedAt: number }>} */
+const userPhotoCache = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, { cachedAt }] of userPhotoCache) {
+    if (now - cachedAt > PHOTO_CACHE_TTL_MS) userPhotoCache.delete(uid);
+  }
+}, 5 * 60 * 1000);
 
 /** @param {import('@maxhub/max-bot-api').Bot} bot */
 export function attachHandlersBot2(bot) {
@@ -51,10 +61,20 @@ export function attachHandlersBot2(bot) {
         console.error("[bot2] register_user:", err.message);
       }
     }
-    await sendMenu(ctx);
+    await ctx.reply(
+      [
+        "Привет! 👋",
+        "",
+        "Отправь фото — и я предложу варианты обработки: фильтры, фоны, исторические образы, надписи.",
+        "",
+        "💡 Лимит: 1 обработка в сутки",
+        "🎁 Приглашай друзей — за каждого +1 генерация",
+      ].join("\n"),
+      { format: "markdown" },
+    );
   });
 
-  async function sendMenu(ctx) {
+  async function sendModificationMenu(ctx) {
     const keyboard = Keyboard.inlineKeyboard([
       [Keyboard.button.callback("🎨 Фильтры", "opt_filters")],
       [Keyboard.button.callback("👤 Исторические личности", "opt_figures")],
@@ -62,7 +82,7 @@ export function attachHandlersBot2(bot) {
       [Keyboard.button.callback("✍️ Надписи", "opt_texts")],
     ]);
     await ctx.reply(
-      "Выбери функцию для обработки фото:",
+      "Фото получено! Выбери модификацию:",
       { format: "markdown", attachments: [keyboard] },
     );
   }
@@ -70,82 +90,27 @@ export function attachHandlersBot2(bot) {
   bot.action(/^opt_(filters|figures|backgrounds|texts)$/, async (ctx) => {
     const userId = String(ctx.user?.user_id);
     const option = ctx.match[1];
-    userStates.set(userId, option);
-    const name = OPTION_NAMES[option] ?? option;
-    await ctx.answerOnCallback({ notification: `Выбрано: ${name}` });
-    await ctx.reply(
-      `Выбрано: **${name}**\n\nТеперь отправь фото для обработки.`,
-      { format: "markdown" },
-    );
-  });
 
-  bot.on("message_created", async (ctx) => {
-    if (!ctx.user?.user_id || ctx.user.user_id === ctx.myId) return;
-
-    const text = safeMessageText(ctx.message);
-    const { name: cmd } = parseSlashCommand(text);
-
-    if (cmd === "start" || cmd === "menu") {
-      await sendMenu(ctx);
+    const cached = userPhotoCache.get(userId);
+    if (!cached) {
+      await ctx.answerOnCallback({ notification: "Сначала отправь фото" });
+      await ctx.reply("Сначала отправь фото — и я покажу варианты обработки.", { format: "markdown" });
       return;
     }
 
-    if (cmd === "help") {
-      await ctx.reply(
-        [
-          "**Как пользоваться:**",
-          "",
-          "1. Выбери функцию в меню (/menu)",
-          "2. Отправь одно фото (JPEG или PNG)",
-          "3. Получи обработанное изображение",
-          "",
-          "💡 **Лимит:** 1 обработка в сутки",
-          "🎁 **+1 генерация:** поделись результатом с другом. Если он откроет бота по ссылке из подписи — тебе зачислится дополнительная генерация.",
-        ].join("\n"),
-        { format: "markdown" },
-      );
+    if (processingKeys.has(userId)) {
+      await ctx.answerOnCallback({ notification: "Уже обрабатываю..." });
       return;
     }
 
-    const attachment = pickImageAttachment(ctx.message);
-
-    if (!attachment?.payload?.url) {
-      if (cmd != null || text.length > 0) {
-        await ctx.reply(
-          "Отправь **фото** из галереи. Если ещё не выбрал функцию — используй /menu.",
-          { format: "markdown" },
-        );
-      }
-      return;
-    }
-
-    const userId = String(ctx.user.user_id);
-    const selectedOption = userStates.get(userId);
-
-    if (!selectedOption) {
-      await ctx.reply(
-        "Сначала выбери функцию в меню — /menu.",
-        { format: "markdown" },
-      );
-      return;
-    }
-
-    if (processingKeys.has(userId)) return;
+    const optName = OPTION_NAMES[option] ?? option;
+    await ctx.answerOnCallback({ notification: `Применяю: ${optName}` });
 
     processingKeys.add(userId);
     try {
       await ctx.sendAction("sending_photo");
 
-      let bytes;
-      try {
-        bytes = await fetchImagePayload(attachment.payload.url, botToken);
-      } catch {
-        await ctx.reply("Не удалось загрузить фото. Попробуй ещё раз.");
-        return;
-      }
-
       const link = await getBotLink(ctx, userId).catch(() => null);
-      const optName = OPTION_NAMES[selectedOption] ?? selectedOption;
       const caption = link
         ? `✨ Готово! (${optName})\n\n🔗 [Создай своё изображение](${link})`
         : `✨ Готово! (${optName})`;
@@ -157,12 +122,13 @@ export function attachHandlersBot2(bot) {
           ].join("\n")
         : null;
 
-      const envKey = OPTION_ENV[selectedOption];
+      const envKey = OPTION_ENV[option];
       const orchestratorUrl = (process.env[envKey] || process.env.ORCHESTRATOR_URL || "").trim();
       const internalToken = process.env.INTERNAL_TOKEN?.trim() ?? "";
 
       if (!internalToken || !orchestratorUrl) {
-        await sendPhotoWithReferral(ctx, bytes, caption, followup);
+        await sendPhotoWithReferral(ctx, cached.bytes, caption, followup);
+        userPhotoCache.delete(userId);
         return;
       }
 
@@ -172,7 +138,12 @@ export function attachHandlersBot2(bot) {
         return;
       }
 
-      const jobId = await submitPhotoJob({ orchestratorUrl, internalToken, userId, imageBytes: bytes });
+      const jobId = await submitPhotoJob({
+        orchestratorUrl,
+        internalToken,
+        userId,
+        imageBytes: cached.bytes,
+      });
 
       let out;
       try {
@@ -193,6 +164,7 @@ export function attachHandlersBot2(bot) {
         return;
       }
 
+      userPhotoCache.delete(userId);
       await sendPhotoWithReferral(ctx, out, caption, followup);
     } catch (err) {
       if (err instanceof QuotaExceededError) {
@@ -207,5 +179,74 @@ export function attachHandlersBot2(bot) {
     } finally {
       processingKeys.delete(userId);
     }
+  });
+
+  bot.on("message_created", async (ctx) => {
+    if (!ctx.user?.user_id || ctx.user.user_id === ctx.myId) return;
+
+    const text = safeMessageText(ctx.message);
+    const { name: cmd } = parseSlashCommand(text);
+
+    if (cmd === "start" || cmd === "menu") {
+      await ctx.reply(
+        [
+          "**Как пользоваться:**",
+          "",
+          "Отправь фото — и выбери одну из модификаций: фильтры, фоны, исторические образы или надпись.",
+          "",
+          "💡 **Лимит:** 1 обработка в сутки",
+          "🎁 **+1 генерация:** поделись результатом с другом. Если он откроет бота по ссылке из подписи — тебе зачислится бонус.",
+        ].join("\n"),
+        { format: "markdown" },
+      );
+      return;
+    }
+
+    if (cmd === "help") {
+      await ctx.reply(
+        [
+          "**Как пользоваться:**",
+          "",
+          "1. Отправь одно фото (JPEG или PNG)",
+          "2. Выбери модификацию из меню",
+          "3. Получи обработанное изображение",
+          "",
+          "💡 **Лимит:** 1 обработка в сутки",
+          "🎁 **+1 генерация:** поделись результатом — если друг откроет бота по ссылке из подписи, тебе зачислится бонус.",
+        ].join("\n"),
+        { format: "markdown" },
+      );
+      return;
+    }
+
+    const attachment = pickImageAttachment(ctx.message);
+
+    if (!attachment?.payload?.url) {
+      if (cmd != null || text.length > 0) {
+        await ctx.reply(
+          "Отправь **фото** из галереи — и я покажу варианты обработки.",
+          { format: "markdown" },
+        );
+      }
+      return;
+    }
+
+    const userId = String(ctx.user.user_id);
+    if (processingKeys.has(userId)) return;
+
+    processingKeys.add(userId);
+    let bytes;
+    try {
+      await ctx.sendAction("sending_photo");
+      bytes = await fetchImagePayload(attachment.payload.url, botToken);
+    } catch {
+      await ctx.reply("Не удалось загрузить фото. Попробуй ещё раз.");
+      processingKeys.delete(userId);
+      return;
+    }
+    processingKeys.delete(userId);
+
+    userPhotoCache.set(userId, { bytes, cachedAt: Date.now() });
+    await sendModificationMenu(ctx);
   });
 }

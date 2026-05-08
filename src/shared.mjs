@@ -70,7 +70,7 @@ export async function getBotLink(ctx, userId) {
     }
   }
   if (!cachedBotUsername || !userId) return null;
-  return `https://max.ru/bot/${cachedBotUsername}?start=${userId}`;
+  return `https://max.ru/${cachedBotUsername}?start=${userId}`;
 }
 
 /**
