@@ -1,7 +1,7 @@
 {
   "name": "max-messenger-sample-bot",
   "version": "1.0.0",
-  "description": "Тестовый чат-бот для мессенджера MAX (long polling + webhook)",
+  "description": "Чат-бот для MAX (main = демо-эхо; ветки photo-change-* с оркестратором)",
   "type": "module",
   "engines": {
     "node": ">=18.18.0"

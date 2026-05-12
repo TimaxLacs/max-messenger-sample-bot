@@ -1,60 +1,9 @@
 services:
-  orchestrator:
-    build: ./orchestrator
-    restart: unless-stopped
-    environment:
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
-      DATA_DIR: /data
-      MAX_PER_USER_PER_DAY: ${MAX_PER_USER_PER_DAY:-1}
-      AI_TRANSFORM_URL: ${AI_TRANSFORM_URL:-}
-      STUB_DELAY_SECONDS: ${STUB_DELAY_SECONDS:-0}
-      QUOTA_TIMEZONE: ${QUOTA_TIMEZONE:-Europe/Moscow}
-      LUKOSHKO_TOKEN: ${LUKOSHKO_TOKEN:-}
-      LUKOSHKO_BASE_URL: ${LUKOSHKO_BASE_URL:-https://lukoshko.ilovlya.ru}
-    volumes:
-      - orchestrator-data:/data
-
-  bot-min:
+  bot:
     build: .
-    env_file: .env
     restart: unless-stopped
+    env_file: .env
     command: ["node", "src/polling.mjs"]
     environment:
-      BOT_TOKEN: ${BOT_TOKEN_MIN}
-      BOT_MODE: 1
-      ORCHESTRATOR_URL: http://orchestrator:8000
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      BOT_TOKEN: ${BOT_TOKEN}
       MAX_IMAGE_USE_BOT_AUTH: ${MAX_IMAGE_USE_BOT_AUTH:-0}
-    depends_on:
-      - orchestrator
-
-  bot-max:
-    build: .
-    env_file: .env
-    restart: unless-stopped
-    command: ["node", "src/polling.mjs"]
-    environment:
-      BOT_TOKEN: ${BOT_TOKEN_MAX}
-      BOT_MODE: 2
-      ORCHESTRATOR_URL: http://orchestrator:8000
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
-      MAX_IMAGE_USE_BOT_AUTH: ${MAX_IMAGE_USE_BOT_AUTH:-0}
-    depends_on:
-      - orchestrator
-
-  bot-veteran:
-    build: .
-    env_file: .env
-    restart: unless-stopped
-    command: ["node", "src/polling.mjs"]
-    environment:
-      BOT_TOKEN: ${BOT_TOKEN_VETERAN}
-      BOT_MODE: 3
-      ORCHESTRATOR_URL: http://orchestrator:8000
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
-      MAX_IMAGE_USE_BOT_AUTH: ${MAX_IMAGE_USE_BOT_AUTH:-0}
-    depends_on:
-      - orchestrator
-
-volumes:
-  orchestrator-data:

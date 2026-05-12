@@ -4,15 +4,6 @@ export const ALLOWED_UPDATES = [
   "bot_started",
 ];
 
-export const processingKeys = new Set();
-
-export function orchSecrets() {
-  return {
-    orchestratorUrl: process.env.ORCHESTRATOR_URL?.trim() ?? "",
-    internalToken: process.env.INTERNAL_TOKEN?.trim() ?? "",
-  };
-}
-
 /** @param {import('@maxhub/max-bot-api').Message} message */
 export function safeMessageText(message) {
   const raw = message?.body?.text;
@@ -52,41 +43,15 @@ export async function fetchImagePayload(url, botToken) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-let cachedBotUsername = null;
-
 /**
- * Returns user-specific referral link, or null on failure.
- * @param {import('@maxhub/max-bot-api').Context} ctx
- * @param {string} userId
- * @returns {Promise<string|null>}
- */
-export async function getBotLink(ctx, userId) {
-  if (!cachedBotUsername) {
-    try {
-      const info = await ctx.api.getMyInfo();
-      cachedBotUsername = info.username;
-    } catch {
-      return null;
-    }
-  }
-  if (!cachedBotUsername || !userId) return null;
-  return `https://max.ru/${cachedBotUsername}?start=${userId}`;
-}
-
-/**
- * Uploads photo and sends it with a caption, then sends a follow-up message.
  * @param {import('@maxhub/max-bot-api').Context} ctx
  * @param {Buffer} imageBytes
- * @param {string} caption  - shown with the photo
- * @param {string|null} followup - sent as a second message; skipped if null
+ * @param {string} replyText
  */
-export async function sendPhotoWithReferral(ctx, imageBytes, caption, followup) {
+export async function replyWithUploadedPhoto(ctx, imageBytes, replyText) {
   const uploaded = await ctx.api.uploadImage({ source: imageBytes });
-  await ctx.reply(caption, {
+  await ctx.reply(replyText, {
     attachments: [uploaded.toJson()],
     format: "markdown",
   });
-  if (followup) {
-    await ctx.reply(followup, { format: "markdown" });
-  }
 }
