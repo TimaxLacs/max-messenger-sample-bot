@@ -28,20 +28,6 @@ services:
     depends_on:
       - orchestrator
 
-  bot-max:
-    build: .
-    env_file: .env
-    restart: unless-stopped
-    command: ["node", "src/polling.mjs"]
-    environment:
-      BOT_TOKEN: ${BOT_TOKEN_MAX}
-      BOT_MODE: 2
-      ORCHESTRATOR_URL: http://orchestrator:8000
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
-      MAX_IMAGE_USE_BOT_AUTH: ${MAX_IMAGE_USE_BOT_AUTH:-0}
-    depends_on:
-      - orchestrator
-
   bot-veteran:
     build: .
     env_file: .env

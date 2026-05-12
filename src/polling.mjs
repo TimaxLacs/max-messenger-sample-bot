@@ -2,7 +2,6 @@ import "dotenv/config";
 import { Bot } from "@maxhub/max-bot-api";
 import { ALLOWED_UPDATES } from "./shared.mjs";
 import { attachHandlersBot1 } from "./bot1-minimal.mjs";
-import { attachHandlersBot2 } from "./bot2-full.mjs";
 import { attachHandlersBot3 } from "./bot3-memorial.mjs";
 
 const token = process.env.BOT_TOKEN?.trim();
@@ -20,11 +19,11 @@ if (internalTok && !orchUrl) {
 }
 
 if (!internalTok) {
-  console.error("[max-messenger-bot] INTERNAL_TOKEN пустой — режим эхо: исходное фото без оркестратора.");
+  console.error("[photo-change-min] INTERNAL_TOKEN пустой — режим эхо: исходное фото без оркестратора.");
 }
 
 console.error(
-  `[max-messenger-bot] ORCHESTRATOR_URL=${orchUrl || "(не используется)"} | pipeline=${internalTok ? "orchestrator" : "echo-original"}`,
+  `[photo-change-min] ORCHESTRATOR_URL=${orchUrl || "(не используется)"} | pipeline=${internalTok ? "orchestrator" : "echo-original"}`,
 );
 
 const bot = new Bot(token);
@@ -35,14 +34,11 @@ bot.catch((err, ctx) => {
 });
 
 const mode = process.env.BOT_MODE?.trim() || "1";
-if (mode === "2") {
-  console.error("[max-messenger-bot] Режим 2: Полный функционал");
-  attachHandlersBot2(bot);
-} else if (mode === "3") {
-  console.error("[max-messenger-bot] Режим 3: Открытка к 9 мая");
+if (mode === "3") {
+  console.error("[photo-change-min] Режим 3: памятная открытка (9 Мая)");
   attachHandlersBot3(bot);
 } else {
-  console.error("[max-messenger-bot] Режим 1: Минимальный (по умолчанию)");
+  console.error("[photo-change-min] Режим 1: минимальный (фото → обработка)");
   attachHandlersBot1(bot);
 }
 
