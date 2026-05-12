@@ -2,9 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { Bot, Context } from "@maxhub/max-bot-api";
 import { ALLOWED_UPDATES } from "./shared.mjs";
-import { attachHandlersBot1 } from "./bot1-minimal.mjs";
 import { attachHandlersBot2 } from "./bot2-full.mjs";
-import { attachHandlersBot3 } from "./bot3-memorial.mjs";
 
 const token = process.env.BOT_TOKEN?.trim();
 const secretFromEnv = process.env.WEBHOOK_SECRET?.trim();
@@ -25,11 +23,11 @@ if (internalTok && !orchUrl) {
 }
 
 if (!internalTok) {
-  console.error("[max-messenger-bot] INTERNAL_TOKEN пустой — режим эхо: исходное фото без оркестратора.");
+  console.error("[photo-change-max] INTERNAL_TOKEN пустой — режим эхо: исходное фото без оркестратора.");
 }
 
 console.error(
-  `[max-messenger-bot] ORCHESTRATOR_URL=${orchUrl || "(не используется)"} | pipeline=${internalTok ? "orchestrator" : "echo-original"}`,
+  `[photo-change-max] ORCHESTRATOR_URL=${orchUrl || "(не используется)"} | pipeline=${internalTok ? "orchestrator" : "echo-original"}`,
 );
 
 const bot = new Bot(token);
@@ -39,17 +37,8 @@ bot.catch((err, ctx) => {
   console.error("update:", JSON.stringify(ctx?.update, null, 2));
 });
 
-const mode = process.env.BOT_MODE?.trim() || "1";
-if (mode === "2") {
-  console.error("[max-messenger-bot] Режим 2: Полный функционал");
-  attachHandlersBot2(bot);
-} else if (mode === "3") {
-  console.error("[max-messenger-bot] Режим 3: Открытка к 9 мая");
-  attachHandlersBot3(bot);
-} else {
-  console.error("[max-messenger-bot] Режим 1: Минимальный (по умолчанию)");
-  attachHandlersBot1(bot);
-}
+console.error("[photo-change-max] Полный сценарий: фото → меню фильтр/фон → обработка");
+attachHandlersBot2(bot);
 
 bot.botInfo = await bot.api.getMyInfo();
 const middleware = bot.middleware();
